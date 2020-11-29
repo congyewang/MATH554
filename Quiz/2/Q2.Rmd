@@ -1,0 +1,198 @@
+---
+title: "Quiz 2"
+output: html_document
+---
+
+```{r message=FALSE}
+library(tidyverse)
+library(magrittr)
+library(mvtnorm)
+library(coda)
+setwd("~/R/MATH554/Quiz/2")
+```
+
+```{r}
+rwm=function(nits,theta0,log.pi,lambda,qV,...) {
+    d=length(theta0)
+    if (is.null(qV)) {
+        A=diag(d)
+    }
+    else {
+        A=t(chol(qV))
+    }
+    
+    store=matrix(nrow=nits+1,ncol=d+1)
+    psis=matrix(nrow=nits,ncol=d)
+
+    nacc=0
+    theta.curr=theta0
+    log.pi.curr=log.pi(theta.curr,...)
+    store[1,]=c(theta.curr,log.pi.curr)
+    for (i in 1:nits) {
+        psi=theta.curr+lambda*A%*%rnorm(d); psis[i,]=psi
+        log.pi.prop=log.pi(psi,...)
+        log.alpha=log.pi.prop-log.pi.curr
+        if (log(runif(1))<log.alpha) {
+            theta.curr=psi
+            log.pi.curr=log.pi.prop
+            nacc=nacc+1
+        }
+        store[i+1,]=c(theta.curr,log.pi.curr)
+    }
+    
+    return(list(acc=nacc/nits,store=store,psis=psis))
+}
+```
+
+```{r message=FALSE}
+Habitat_mapping <- function(variance) {
+  z <- switch(variance,
+              "Forest" = 0,
+              "Bog"    = 1
+              )
+  return(z)
+}
+
+df <- read_delim("./labants.txt", delim = "\t")
+df$Habitat <- sapply(df$Habitat, Habitat_mapping)
+summary(df)
+```
+
+```{r}
+df
+```
+
+```{r}
+# Verity X*beta & Extract ys
+Xs <- df %>%
+  select(-Site, -Srich) %>%
+  as.matrix()
+Xs <- cbind(rep(1), Xs)
+beta_1 <- c(10, -0.6, -0.2, 0)
+Xs %*% beta_1 %>%
+  sum()
+ys <- as.matrix(df$Srich)
+```
+
+```{r}
+log.pi.poisson.reg.fn <- function(betas,ys,X) {
+  D <- matrix(data = c(10, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.1, 0, 0, 0, 0, 100), nrow = 4, ncol = 4) # Variance of Normal Distribution
+  sds <- sqrt(diag(D)) # Standard Deviation without NaN of Normal Distribution
+  ms <- c(10, -1, 0, 0) # Mean Value of Normal Distribution
+  log.prior <- sum(dnorm(betas, ms, sds, log = TRUE)) # Prior of Log Format
+
+  lambdas <- exp(X %*% betas)
+  log.like <- sum(ys * log(lambdas) - lambdas - lfactorial(ys))
+
+  return(log.prior + log.like)
+}
+```
+
+```{r}
+beta_1 <- c(10, -0.6, -0.2, 0)
+beta_2 <- c(9.9, 0, 0, 0)
+check2_1 <- log.pi.poisson.reg.fn(beta_1, ys, Xs)
+check2_2 <- log.pi.poisson.reg.fn(beta_2, ys, Xs)
+check2_1
+check2_2
+check2_1 - check2_2
+```
+
+
+```{r}
+ctl <- list(fnscale = -1)
+fit <- optim(c(10, -0.6, -0.2, 0), log.pi.poisson.reg.fn, control = ctl, hessian = TRUE, ys = ys, X = Xs)
+
+qmodeLR <- fit$par
+qVLR <- -solve(fit$hessian)
+```
+
+```{r}
+fit
+```
+
+```{r}
+qmodeLR
+```
+
+```{r}
+qVLR
+```
+
+```{r}
+set.seed(1)
+nits   = 100000
+theta0 = qmodeLR
+lambda = 1.3
+mcoutRWMpoissonreg <- rwm(nits, theta0, log.pi.poisson.reg.fn, lambda, qVLR, ys = ys, X = Xs)
+
+par(mfrow=c(4,2))
+plot(0:nits, mcoutRWMpoissonreg$store[,1], type = "l", xlab = "iteration", ylab = "beta1")
+plot(density(mcoutRWMpoissonreg$store[,1]), main = "", xlab = "beta1")
+plot(0:nits, mcoutRWMpoissonreg$store[,2], type = "l", xlab = "iteration", ylab = "beta2")
+plot(density(mcoutRWMpoissonreg$store[,2]), main = "", xlab = "beta2")
+plot(0:nits, mcoutRWMpoissonreg$store[,3], type = "l", xlab = "iteration", ylab = "beta3")
+plot(density(mcoutRWMpoissonreg$store[,3]), main = "", xlab = "beta3")
+plot(0:nits, mcoutRWMpoissonreg$store[,4], type = "l", xlab = "iteration", ylab = "beta4")
+plot(density(mcoutRWMpoissonreg$store[,4]), main = "", xlab = "beta4")
+```
+
+```{r}
+q2 <- function() {
+nits   = 100000
+theta0 = qmodeLR
+lambda = 1.3
+mcoutRWMpoissonreg <- rwm(nits, theta0, log.pi.poisson.reg.fn, lambda, qVLR, ys = ys, X = Xs)
+
+return(mcoutRWMpoissonreg)
+}
+
+for (i in 1:10) {
+
+mcoutRWMpoissonreg = q2()
+  
+essb1 <- effectiveSize(mcoutRWMpoissonreg$store[,1])
+essb2 <- effectiveSize(mcoutRWMpoissonreg$store[,2])
+essb3 <- effectiveSize(mcoutRWMpoissonreg$store[,3])
+essb4 <- effectiveSize(mcoutRWMpoissonreg$store[,4])
+posmeds <- signif(apply(mcoutRWMpoissonreg$store[,1:4], 2, median), digits=4)
+posmean <- signif(apply(mcoutRWMpoissonreg$store[,1:4], 2, mean), digits=4)
+
+print(paste("================================", "No. ", i, "================================"))
+print(paste("essb1: ", essb1, "posmeds1: ", posmeds[1], "posmean1: ", posmean[1]))
+print(paste("essb2: ", essb2, "posmeds2: ", posmeds[2], "posmean2: ", posmean[2]))
+print(paste("essb3: ", essb3, "posmeds3: ", posmeds[3], "posmean3: ", posmean[3]))
+print(paste("essb4: ", essb4, "posmeds4: ", posmeds[4], "posmean4: ", posmean[4]))
+print("========================================================================")
+}
+```
+
+```{r}
+for (i in 1:10) {
+nits   = 100000
+theta0 = qmodeLR
+lambda = 1.3
+mcoutRWMpoissonreg <- rwm(nits, theta0, log.pi.poisson.reg.fn, lambda, qVLR, ys = ys, X = Xs)
+print(mean(mcoutRWMpoissonreg$store[8000:30000,4]>-0.001))
+}
+```
+  
+```{r}
+plot(density(mcoutRWMpoissonreg$store[8000:30000,4]))
+```
+
+```{r}
+for (i in 1:10) {
+nits   = 50000
+theta0 = qmodeLR
+lambda = 1.3
+mcoutRWMpoissonreg <- rwm(nits, theta0, log.pi.poisson.reg.fn, lambda, qVLR, ys = ys, X = Xs)
+
+beta1 <- mcoutRWMpoissonreg$store[8000:30000,1]
+beta3 <- mcoutRWMpoissonreg$store[8000:30000,3]
+p <- cor.test(beta1, beta3, method ="pearson")$estimate
+
+print(p)
+}
+
+```

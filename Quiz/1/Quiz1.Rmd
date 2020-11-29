@@ -1,0 +1,251 @@
+---
+title: "Quiz 1"
+---
+
+# Qn 1
+```{r Qn1}
+set.seed(1234)
+for (i in 1:5) {
+  
+  print(
+    mean(
+      sapply(
+        (1+rlogis(100000)^2), sqrt
+        )
+      )
+    )
+
+}
+```
+
+# Qn 2
+```{r Qn2}
+
+set.seed(5431)
+q2 <- function(n) {
+  x=10
+  nt=20000
+  xs=rep(0,nt+1)
+  xs[1]=x
+  for (i in 1:nt) {
+    x = runif(1, min = (x/2 - 1), max = (x/2 + 1))
+    xs[i+1] = x
+  }
+  z <- var(xs)
+  return(z)
+}
+
+var_list <- sapply(seq(1, 10), q2)
+abs(var_list - mean(var_list))
+mean(var_list)
+```
+
+
+# Qn 3
+```{r}
+min(1, 0.2) + min(1, 5)
+```
+
+# Qn 4
+```{r}
+# Chris' function, no need to change.
+library("mvtnorm")
+## MVN independence sampler
+indep.samp.MVN<-function(nits,theta0,log.pi,qmode,qV,...) {
+    d=length(theta0)
+    A=t(chol(qV))
+    store=matrix(nrow=nits+1,ncol=d+1)
+    psis=matrix(nrow=nits,ncol=d)
+	
+    nacc=0
+    theta.curr=theta0
+    log.pi.curr=log.pi(theta.curr,...)
+    log.q.curr=dmvnorm(theta.curr,qmode,qV,log=TRUE) 
+    store[1,]=c(theta.curr,log.pi.curr)
+
+    for (i in 1:nits) {
+        psi=qmode+A%*%rnorm(d); psis[i,]=psi
+        log.pi.prop=log.pi(psi,...)
+        log.q.prop=dmvnorm(psi,qmode,qV,log=TRUE) 
+        log.alpha=log.pi.prop+log.q.curr-log.pi.curr-log.q.prop
+        if (log(runif(1))<log.alpha) {
+            theta.curr=psi
+            log.pi.curr=log.pi.prop
+            log.q.curr=log.q.prop
+            nacc=nacc+1
+        }
+        store[i+1,]=c(theta.curr,log.pi.curr)
+    }
+    return(list(acc=nacc/nits,store=store,psis=psis))
+}
+```
+
+```{r}
+# Log density (Just -theta^4 is okay)
+log.dens.q4<-function(theta) {
+    return(sum(log(exp(-theta^4))))
+}
+```
+
+```{r}
+set.seed(12341)
+q4.res <- function (r, n) {
+  mcoutIS1=indep.samp.MVN(n, c(0), log.dens.q4, c(0), matrix(nrow=1,ncol=1,data=4))
+  z <- mean(mcoutIS1$store[,1]>0.5)
+  return(z)
+}
+
+q4_list <- sapply(seq(1, 10), q4.res, n = 10000)
+abs(q4_list - mean(q4_list))
+mean(q4_list)
+```
+
+# Qn 5
+```{r}
+# Chris' function, change psi in the for loop since the question of quiz is N(theta, (3/2)^2).
+# According to the notes, there are two types of coding, namely rnorm(d, mean = theta, sd = 3/2) , or theta + 3/2*rnorm(d)
+rwm=function(nits,theta0,log.pi,lambda,qV,...) {
+    d=length(theta0)
+    if (is.null(qV)) {
+        A=diag(d)
+    }
+    else {
+        A=t(chol(qV))
+    }
+    
+    store=matrix(nrow=nits+1,ncol=d+1)
+    psis=matrix(nrow=nits,ncol=d)
+    
+    nacc=0
+    theta.curr=theta0
+    log.pi.curr=log.pi(theta.curr,...)
+    store[1,]=c(theta.curr,log.pi.curr)
+    for (i in 1:nits) {
+        # psi=theta.curr+lambda*A%*%rnorm(d, mean = theta.curr, sd = 3/2); psis[i,]=psi
+        # psi=theta.curr+lambda*A%*%(3/2*rnorm(d)); psis[i,]=psi
+        # psi=theta.curr+lambda*A%*%(3/2*rnorm(d)); psis[i,]=psi
+        psi=theta.curr+lambda*A%*%(3/2*rnorm(d)); psis[i,]=psi
+        log.pi.prop=log.pi(psi,...)
+        log.alpha=log.pi.prop-log.pi.curr
+        if (log(runif(1))<log.alpha) {
+            theta.curr=psi
+            log.pi.curr=log.pi.prop
+            nacc=nacc+1
+        }
+        store[i+1,]=c(theta.curr,log.pi.curr)
+    }
+    
+    return(list(acc=nacc/nits,store=store,psis=psis))
+}
+```
+
+```{r}
+log.dens.q5 <- function(theta) {
+  return(sum(log(exp(-abs(theta^3+1)))))
+}
+```
+
+```{r}
+set.seed(12341)
+mcoutRWM1=rwm(1000,c(0),log.dens.q5,2,NULL)
+par(mfrow=c(2,2))
+xs=seq(-6,6,len=500)
+plot(xs,dnorm(xs),lwd=2,type="l",ylab="Density",xlab=" ")
+lines(xs,dnorm(xs,1,sd=2),lwd=2,col="red",lty=2)
+points(c(1),c(0),pch="+")
+plot(0:100,mcoutRWM1$store[1:101,1],type="l",xlab="iteration",ylab="theta")
+plot(density(mcoutRWM1$store[1:101,1]),main="Density from chain",xlim=c(-6,6),xlab="")
+allpts=c(mcoutRWM1$store[1:101,1],mcoutRWM1$psis)
+lo=min(allpts); hi=max(allpts)
+plot(0:100,mcoutRWM1$store[1:101,1],type="l",xlab="iteration",ylab="theta",ylim=c(lo,hi))
+points(1:100,mcoutRWM1$psis[1:100],pch="x",col="red")
+library(coda)
+```
+
+```{r}
+set.seed(12341)
+q5.res <- function (r, n) {
+  mcoutRWM1=rwm(n,c(0),log.dens.q5,2,NULL)
+  z <- mean(mcoutRWM1$store[,1])
+  return(z)
+}
+
+q5_list <- sapply(seq(1, 10), q5.res, n = 10000)
+abs(q5_list - mean(q5_list))
+mean(q5_list)
+```
+
+```{r}
+rwm.test=function(nits,theta0,log.pi,lambda,qV,choice,...) {
+    d=length(theta0)
+    if (is.null(qV)) {
+        A=diag(d)
+    }
+    else {
+        A=t(chol(qV))
+    }
+    
+    store=matrix(nrow=nits+1,ncol=d+1)
+    psis=matrix(nrow=nits,ncol=d)
+    
+    nacc=0
+    theta.curr=theta0
+    log.pi.curr=log.pi(theta.curr,...)
+    store[1,]=c(theta.curr,log.pi.curr)
+    for (i in 1:nits) {
+        if (choice < 0) {
+          psi=lambda*A%*%rnorm(d, mean = theta.curr, sd = 3/2)
+        }
+        else if (choice == 0){
+          psi=theta.curr+lambda*A%*%rnorm(d, sd = 3/2)
+        }
+        else {
+          psi=theta.curr+lambda*A%*%(3/2*rnorm(d))
+        }
+        psis[i,]=psi
+        log.pi.prop=log.pi(psi,...)
+        log.alpha=log.pi.prop-log.pi.curr
+        if (log(runif(1))<log.alpha) {
+            theta.curr=psi
+            log.pi.curr=log.pi.prop
+            nacc=nacc+1
+        }
+        store[i+1,]=c(theta.curr,log.pi.curr)
+    }
+    
+    return(list(acc=nacc/nits,store=store,psis=psis))
+}
+```
+
+```{r}
+q5.res.test <- function (r, n, choice) {
+  mcoutRWM1=rwm.test(n,c(0),log.dens.q5,2,NULL, choice)
+  z <- mean(mcoutRWM1$store[,1])
+  return(z)
+}
+```
+
+```{r}
+set.seed(12341)
+q5_list_l0 <- sapply(seq(1, 10), q5.res.test, n = 10000, choice = -1)
+abs(q5_list_l0 - mean(q5_list_l0))
+mean(q5_list_l0)
+```
+
+```{r}
+set.seed(12341)
+q5_list_0 <- sapply(seq(1, 10), q5.res.test, n = 10000, choice = 0)
+abs(q5_list_0 - mean(q5_list_0))
+mean(q5_list_0)
+```
+
+```{r}
+set.seed(12341)
+q5_list_g0 <- sapply(seq(1, 10), q5.res.test, n = 10000, choice = 1)
+abs(q5_list_g0 - mean(q5_list_g0))
+mean(q5_list_g0)
+```
+
+
+
+
